@@ -550,3 +550,36 @@ cleanup:
 
     return ret;
 }
+
+
+
+
+#include <algorithm>
+#include <random>
+int main() {
+    // Initialize vector with numbers 1 through 100
+    constexpr int n = 1000;
+    std::vector<long long> data(n);
+    std::iota(data.begin(), data.end(), 1); // fill in ascending order from 1 to n
+
+    // Shuffle numbers randomly
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::ranges::shuffle(data, g);
+
+    std::cout << "Before sorting: ";
+    for (const long long val : data) {
+        std::cout << val << " ";
+    }
+    std::cout << std::endl;
+
+    timsort_<IntTag>(data.data(), data.size());
+
+    std::cout << "After sorting:  ";
+    for (const long long val : data) {
+        std::cout << val << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
