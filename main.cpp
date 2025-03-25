@@ -1,3 +1,32 @@
+// ------------------------------
+// <START> SETUP FOR POWERSORT
+// ------------------------------
+
+typedef long long npy_intp;
+
+#include <iostream>
+#include <vector>
+#include <cstring>
+
+#define NPY_UNLIKELY(x) (x)
+#define NPY_ENOMEM 1
+
+struct IntTag {
+    using type = long long;
+    static bool less(const type &a, const type &b) {
+        return a < b;
+    }
+};
+
+// ------------------------------
+// <END> SETUP FOR POWERSORT
+// ------------------------------
+
+
+
+
+
+
 /* -*- c -*- */
 
 /*
@@ -32,9 +61,6 @@
 
 #define NPY_NO_DEPRECATED_API NPY_API_VERSION
 
-#include "npy_sort.h"
-#include "npysort_common.h"
-#include "numpy_tag.h"
 
 #include <cstdlib>
 #include <utility>
