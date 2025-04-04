@@ -8,6 +8,7 @@ typedef long long npy_intp;
 #include <iostream>
 #include <vector>
 #include <cstring>
+#include <random>
 
 #define NPY_UNLIKELY(x) (x)
 #define NPY_ENOMEM 1
@@ -464,21 +465,50 @@ found_new_run_(type *arr, run *stack, npy_intp *stack_ptr, npy_intp n2,
 
 template <typename Tag, typename type>
 static int
-force_collapse_(type *arr, run *stack, npy_intp *stack_ptr, buffer_<Tag> *buffer)
+force_collapse_(type *arr, run *stack, npy_intp *stack_ptr,
+                buffer_<Tag> *buffer)
 {
-    while (*stack_ptr > 1) {
-        int ret = merge_at_<Tag>(arr, stack, *stack_ptr - 2, buffer);
-        if (NPY_UNLIKELY(ret < 0))
-            return ret;
-        stack[*stack_ptr - 2].l += stack[*stack_ptr - 1].l;
-        --(*stack_ptr);
+    int ret;
+    npy_intp top = *stack_ptr;
+
+    while (2 < top) {
+        if (stack[top - 3].l <= stack[top - 1].l) {
+            ret = merge_at_<Tag>(arr, stack, top - 3, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 3].l += stack[top - 2].l;
+            stack[top - 2] = stack[top - 1];
+            --top;
+        }
+        else {
+            ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 2].l += stack[top - 1].l;
+            --top;
+        }
     }
+
+    if (1 < top) {
+        ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            return ret;
+        }
+    }
+
     return 0;
 }
 
 template <typename Tag>
 static int
-timsort_(void *start, npy_intp num)
+powersort_(void *start, npy_intp num)
 {
     using type = typename Tag::type;
     int ret;
@@ -518,34 +548,81 @@ cleanup:
 }
 
 
+// ------------------------------
+// <START> SETUP FOR TESTING
+// ------------------------------
+
+// Generate a random permutation of [1, n]
+void generateRandomPermutation(std::vector<long long>& data, std::mt19937& rng) {
+    std::iota(data.begin(), data.end(), 1);
+    std::ranges::shuffle(data, rng);
+}
+
+// Generate "random-runs" input: start with a random permutation,
+// then partition into runs whose lengths are drawn from a geometric distribution
+// with expected run length lambda.
+void generateRandomRuns(std::vector<long long>& data, std::mt19937& rng, double lambda) {
+    generateRandomPermutation(data, rng);
+    size_t n = data.size();
+    size_t i = 0;
+    // The geometric distribution here is defined so that run length = (sample + 1)
+    std::geometric_distribution geo(1.0 / lambda);  // mean = lambda
+    while (i < n) {
+        int run_length = geo(rng) + 1;
+        if (i + run_length > n)
+            run_length = n - i;
+        std::sort(data.begin() + i, data.begin() + i + run_length);
+        i += run_length;
+    }
+}
+
+// ------------------------------
+// <END> SETUP FOR TESTING
+// ------------------------------
+
+
 
 
 #include <algorithm>
 #include <random>
 int main() {
-    // Initialize vector with numbers 1 through 100
-    constexpr int n = 1000;
-    std::vector<long long> data(n);
-    std::iota(data.begin(), data.end(), 1); // fill in ascending order from 1 to n
 
-    // Shuffle numbers randomly
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::ranges::shuffle(data, g);
+    // Default benchmark parameters
+    constexpr int n = 10000000;                // array size: 10**7
+    constexpr int repetitions = 5;             // Number of benchmark repetitions
+    double lambda = 3000.0;                      // Expected run length for "random-runs"
 
-    std::cout << "Before sorting: ";
-    for (const long long val : data) {
-        std::cout << val << " ";
+    std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n";
+
+    std::mt19937 rng(std::random_device{}());
+    std::vector<double> durations; // Store each run's duration in microseconds
+    durations.reserve(repetitions);
+
+    for (int rep = 0; rep < repetitions; ++rep) {
+
+        std::vector<long long> data(n);
+        generateRandomRuns(data, rng, lambda);
+
+        auto start_time = std::chrono::steady_clock::now();
+        powersort_<IntTag>(data.data(), data.size());
+        auto end_time = std::chrono::steady_clock::now();
+        std::chrono::duration<double, std::micro> elapsed_time = end_time - start_time;
+        durations.push_back(elapsed_time.count());
     }
-    std::cout << std::endl;
 
-    timsort_<IntTag>(data.data(), data.size());
-
-    std::cout << "After sorting:  ";
-    for (const long long val : data) {
-        std::cout << val << " ";
+    double sum = std::accumulate(durations.begin(), durations.end(), 0.0);
+    double mean = sum / durations.size();
+    double accum = 0.0;
+    for (const double d : durations) {
+        accum += (d - mean) * (d - mean);
     }
-    std::cout << std::endl;
+    double stdev = std::sqrt(accum / durations.size());
+
+    double normalized = mean / (n * std::log2(n));
+
+    std::cout << "Average time per run: " << mean << " microseconds\n";
+    std::cout << "Standard deviation: " << stdev << " microseconds\n";
+    std::cout << "Normalized time (mean / (n * log2(n))): " << normalized << "\n";
 
     return 0;
 }
