@@ -3,6 +3,7 @@
 // ------------------------------
 
 #include <cassert>
+#include "data_generators/data_generators.h"
 typedef long long npy_intp;
 
 #include <iostream>
@@ -546,41 +547,6 @@ cleanup:
 
     return ret;
 }
-
-
-// ------------------------------
-// <START> SETUP FOR TESTING
-// ------------------------------
-
-// Generate a random permutation of [1, n]
-void generateRandomPermutation(std::vector<long long>& data, std::mt19937& rng) {
-    std::iota(data.begin(), data.end(), 1);
-    std::ranges::shuffle(data, rng);
-}
-
-// Generate "random-runs" input: start with a random permutation,
-// then partition into runs whose lengths are drawn from a geometric distribution
-// with expected run length lambda.
-void generateRandomRuns(std::vector<long long>& data, std::mt19937& rng, double lambda) {
-    generateRandomPermutation(data, rng);
-    size_t n = data.size();
-    size_t i = 0;
-    // The geometric distribution here is defined so that run length = (sample + 1)
-    std::geometric_distribution geo(1.0 / lambda);  // mean = lambda
-    while (i < n) {
-        int run_length = geo(rng) + 1;
-        if (i + run_length > n)
-            run_length = n - i;
-        std::sort(data.begin() + i, data.begin() + i + run_length);
-        i += run_length;
-    }
-}
-
-// ------------------------------
-// <END> SETUP FOR TESTING
-// ------------------------------
-
-
 
 
 #include <algorithm>
