@@ -2,14 +2,12 @@
 // <START> SETUP FOR POWERSORT
 // ------------------------------
 
-#include <cassert>
 #include "data_generators/data_generators.h"
 typedef long long npy_intp;
 
 #include <iostream>
 #include <vector>
 #include <cstring>
-#include <random>
 
 #define NPY_UNLIKELY(x) (x)
 #define NPY_ENOMEM 1
@@ -87,7 +85,6 @@ compute_min_run(npy_intp num)
 typedef struct {
     npy_intp s; /* start pointer */
     npy_intp l; /* length */
-    int power;  /* run power for PowerSort merge ordering */
 } run;
 
 /* buffer for argsort. Declared here to avoid multiple declarations. */
@@ -413,54 +410,60 @@ merge_at_(type *arr, const run *stack, const npy_intp at, buffer_<Tag> *buffer)
     return 0;
 }
 
-static int
-powerloop(npy_intp s1, npy_intp n1, npy_intp n2, npy_intp n)
-{
-    int result = 0;
-    assert(s1 >= 0);
-    assert(n1 > 0 && n2 > 0);
-    assert(s1 + n1 + n2 <= n);
-    npy_intp a = 2 * s1 + n1;  /* 2*a */
-    npy_intp b = a + n1 + n2;  /* 2*b */
-    for (;;) {
-        ++result;
-        if (a >= n) {  /* both quotient bits are 1 */
-            assert(b >= a);
-            a -= n;
-            b -= n;
-        }
-        else if (b >= n) {  /* a/n bit is 0, b/n bit is 1 */
-            break;
-        }
-        assert(a < b && b < n);
-        a <<= 1;
-        b <<= 1;
-    }
-    return result;
-}
-
 template <typename Tag, typename type>
 static int
-found_new_run_(type *arr, run *stack, npy_intp *stack_ptr, npy_intp n2,
-               npy_intp total, buffer_<Tag> *buffer)
+try_collapse_(type *arr, run *stack, npy_intp *stack_ptr, buffer_<Tag> *buffer)
 {
-    if (*stack_ptr > 0) {
-        npy_intp s1 = stack[*stack_ptr - 1].s;
-        npy_intp n1 = stack[*stack_ptr - 1].l;
-        int power = powerloop(s1, n1, n2, total);
-        while (*stack_ptr > 1 && stack[*stack_ptr - 2].power > power) {
-            int ret = merge_at_<Tag>(arr, stack, *stack_ptr - 2, buffer);
+    int ret;
+    npy_intp A, B, C, top;
+    top = *stack_ptr;
+
+    while (1 < top) {
+        B = stack[top - 2].l;
+        C = stack[top - 1].l;
+
+        if ((2 < top && stack[top - 3].l <= B + C) ||
+            (3 < top && stack[top - 4].l <= stack[top - 3].l + B)) {
+            A = stack[top - 3].l;
+
+            if (A <= C) {
+                ret = merge_at_<Tag>(arr, stack, top - 3, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 3].l += B;
+                stack[top - 2] = stack[top - 1];
+                --top;
+            }
+            else {
+                ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 2].l += C;
+                --top;
+            }
+        }
+        else if (1 < top && B <= C) {
+            ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
             if (NPY_UNLIKELY(ret < 0)) {
                 return ret;
             }
-            stack[*stack_ptr - 2].l += stack[*stack_ptr - 1].l;
-            --(*stack_ptr);
+
+            stack[top - 2].l += C;
+            --top;
         }
-        /* Set the power for the last run on the stack */
-        if (*stack_ptr > 0) {
-            stack[*stack_ptr - 1].power = power;
+        else {
+            break;
         }
     }
+
+    *stack_ptr = top;
     return 0;
 }
 
@@ -509,7 +512,7 @@ force_collapse_(type *arr, run *stack, npy_intp *stack_ptr,
 
 template <typename Tag>
 static int
-powersort_(void *start, npy_intp num)
+timsort_(void *start, npy_intp num)
 {
     using type = typename Tag::type;
     int ret;
@@ -523,14 +526,15 @@ powersort_(void *start, npy_intp num)
 
     for (l = 0; l < num;) {
         n = count_run_<Tag>((type *)start, l, num, minrun);
-        // Use PowerSort merge ordering on the previously identified run.
-        int ret = found_new_run_<Tag>((type *)start, stack, &stack_ptr, n, num, &buffer);
-        if (NPY_UNLIKELY(ret < 0))
-            goto cleanup;
-        // Push the new run onto the stack.
         stack[stack_ptr].s = l;
         stack[stack_ptr].l = n;
         ++stack_ptr;
+        ret = try_collapse_<Tag>((type *)start, stack, &stack_ptr, &buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            goto cleanup;
+        }
+
         l += n;
     }
 
@@ -570,7 +574,7 @@ int main() {
         generateRandomRuns(data, rng, lambda);
 
         auto start_time = std::chrono::steady_clock::now();
-        powersort_<IntTag>(data.data(), data.size());
+        timsort_<IntTag>(data.data(), data.size());
         auto end_time = std::chrono::steady_clock::now();
         std::chrono::duration<double, std::micro> elapsed_time = end_time - start_time;
         durations.push_back(elapsed_time.count());
