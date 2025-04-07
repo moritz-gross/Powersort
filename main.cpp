@@ -555,7 +555,7 @@ int main() {
 
     // Default benchmark parameters
     constexpr int n = 10000000;                // array size: 10**7
-    constexpr int repetitions = 5;             // Number of benchmark repetitions
+    constexpr int repetitions = 10;             // Number of benchmark repetitions
     double lambda = 3000.0;                      // Expected run length for "random-runs"
 
     std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n";
