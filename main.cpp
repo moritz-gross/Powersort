@@ -502,6 +502,63 @@ found_new_run_(type *arr, run *stack, npy_intp *stack_ptr, npy_intp n2,
 
 template <typename Tag, typename type>
 static int
+try_collapse_(type *arr, run *stack, npy_intp *stack_ptr, buffer_<Tag> *buffer)
+{
+    int ret;
+    npy_intp A, B, C, top;
+    top = *stack_ptr;
+
+    while (1 < top) {
+        B = stack[top - 2].l;
+        C = stack[top - 1].l;
+
+        if ((2 < top && stack[top - 3].l <= B + C) ||
+            (3 < top && stack[top - 4].l <= stack[top - 3].l + B)) {
+            A = stack[top - 3].l;
+
+            if (A <= C) {
+                ret = merge_at_<Tag>(arr, stack, top - 3, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 3].l += B;
+                stack[top - 2] = stack[top - 1];
+                --top;
+            }
+            else {
+                ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 2].l += C;
+                --top;
+            }
+            }
+        else if (1 < top && B <= C) {
+            ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 2].l += C;
+            --top;
+        }
+        else {
+            break;
+        }
+    }
+
+    *stack_ptr = top;
+    return 0;
+}
+
+template <typename Tag, typename type>
+static int
 force_collapse_(type *arr, run *stack, npy_intp *stack_ptr,
                 buffer_<Tag> *buffer)
 {
@@ -580,6 +637,48 @@ powersort_(void *start, npy_intp num)
 cleanup:
 
     free(buffer.pw);
+
+    return ret;
+}
+
+template <typename Tag>
+static int
+timsort_(void *start, npy_intp num)
+{
+    using type = typename Tag::type;
+    int ret;
+    npy_intp l, n, stack_ptr, minrun;
+    buffer_<Tag> buffer;
+    run stack[TIMSORT_STACK_SIZE];
+    buffer.pw = NULL;
+    buffer.size = 0;
+    stack_ptr = 0;
+    minrun = compute_min_run(num);
+
+    for (l = 0; l < num;) {
+        n = count_run_<Tag>((type *)start, l, num, minrun);
+        stack[stack_ptr].s = l;
+        stack[stack_ptr].l = n;
+        ++stack_ptr;
+        ret = try_collapse_<Tag>((type *)start, stack, &stack_ptr, &buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            goto cleanup;
+        }
+
+        l += n;
+    }
+
+    ret = force_collapse_<Tag>((type *)start, stack, &stack_ptr, &buffer);
+
+    if (NPY_UNLIKELY(ret < 0)) {
+        goto cleanup;
+    }
+
+    ret = 0;
+    cleanup:
+
+        free(buffer.pw);
 
     return ret;
 }
