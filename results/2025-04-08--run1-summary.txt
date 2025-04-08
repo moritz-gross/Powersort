@@ -1,0 +1,62 @@
+/Users/moritzgross/CLionProjects/TimsortNew/cmake-build-debug/TimsortNew
+File: ../TrackA/220
+Array size n = 5000000, repetitions = 1000
+52422
+40035
+
+File: ../TrackA/218
+Array size n = 5000000, repetitions = 1000
+72863
+56974
+
+
+File: ../TrackA/206
+Array size n = 3029999, repetitions = 1000
+23729
+23395
+
+
+File: ../TrackA/231
+Array size n = 5000000, repetitions = 1000
+41487
+27357
+
+
+File: ../TrackA/232
+Array size n = 5000000, repetitions = 1000
+42291
+27487
+
+
+File: ../TrackA/228
+Array size n = 2500000, repetitions = 1000
+20532
+13686
+
+
+File: ../TrackA/207
+Array size n = 1350647, repetitions = 1000
+10348
+9068
+
+
+File: ../TrackA/205
+Array size n = 998711, repetitions = 1000
+7577
+6972
+
+
+File: ../TrackA/173
+Array size n = 1109804, repetitions = 1000
+55874
+55855
+
+
+File: ../TrackA/174
+Array size n = 1079507, repetitions = 1000
+48575
+50662
+
+
+
+Process finished with exit code 0

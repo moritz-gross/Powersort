@@ -683,47 +683,87 @@ timsort_(void *start, npy_intp num)
     return ret;
 }
 
+struct TimingResult {
+    double mean;
+    double stdev;
+    double normalized;
+};
 
-#include <algorithm>
-#include <random>
-int main() {
-    // Read the list of ints from the file
-    std::string filename = "../TrackA/2"; // ".." is needed because execution happens from build-folder, I think ?!
-    std::vector<long long> base_data = list_from_file(filename);
-    if (base_data.empty()) {
-        std::cerr << "Error reading input file " << filename << std::endl;
-        return 1;
-    }
-
-    int n = base_data.size();
-    constexpr int repetitions = 10;
-    std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n";
-
+template <typename SortFunc>
+TimingResult run_benchmark(const std::vector<long long>& base_data, int repetitions, SortFunc sort_func) {
     std::vector<double> durations;
     durations.reserve(repetitions);
-
+    int n = base_data.size();
     for (int rep = 0; rep < repetitions; ++rep) {
-        std::vector<long long> data = base_data;
+        // Make a copy of the input data for this run
+        auto data = base_data;
         auto start_time = std::chrono::steady_clock::now();
-        powersort_<IntTag>(data.data(), data.size());
+        sort_func(data.data(), data.size());
         auto end_time = std::chrono::steady_clock::now();
-        std::chrono::duration<double, std::micro> elapsed_time = end_time - start_time;
-        durations.push_back(elapsed_time.count());
+        double elapsed = std::chrono::duration<double, std::micro>(end_time - start_time).count();
+        durations.push_back(elapsed);
     }
-
     double sum = std::accumulate(durations.begin(), durations.end(), 0.0);
     double mean = sum / durations.size();
     double accum = 0.0;
-    for (const double d : durations) {
+    for (double d : durations) {
         accum += (d - mean) * (d - mean);
     }
     double stdev = std::sqrt(accum / durations.size());
-
     double normalized = mean / (n * std::log2(n));
+    return TimingResult{mean, stdev, normalized};
+}
 
-    std::cout << "Average time per run: " << mean << " microseconds\n";
-    std::cout << "Standard deviation: " << stdev << " microseconds\n";
-    std::cout << "Normalized time (mean / (n * log2(n))): " << normalized << "\n";
+
+int main() {
+
+    std::vector<std::string> filenames = {
+        "220",
+        "218",
+        "206",
+        "231",
+        "232",
+        "228",
+        "207",
+        "205",
+        "173",
+        "174"
+    };
+
+    for (const std::string& filename : filenames) {
+        std::string path = "../TrackA/" + filename;
+        std::vector<long long> base_data = list_from_file(path);
+        if (base_data.empty()) {
+            std::cerr << "Error reading input file " << path << std::endl;
+            return 1;
+        }
+
+        int n = base_data.size();
+        constexpr int repetitions = 1000;
+
+        // Benchmark timsort
+        auto timsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
+            timsort_<IntTag>(data, size);
+        });
+
+        // Benchmark powersort
+        auto powersort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
+            powersort_<IntTag>(data, size);
+        });
+
+        std::cout << "File: " << path << "\n";
+        std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n\n";
+
+        std::cout << "Timsort timings:\n";
+        std::cout << "Average time per run: " << timsort_result.mean << " microseconds\n";
+        std::cout << "Standard deviation: " << timsort_result.stdev << " microseconds\n";
+        std::cout << "Normalized time (mean / (n * log2(n))): " << timsort_result.normalized << "\n\n";
+
+        std::cout << "Powersort timings:\n";
+        std::cout << "Average time per run: " << powersort_result.mean << " microseconds\n";
+        std::cout << "Standard deviation: " << powersort_result.stdev << " microseconds\n";
+        std::cout << "Normalized time (mean / (n * log2(n))): " << powersort_result.normalized << "\n\n\n";
+    }
 
     return 0;
 }

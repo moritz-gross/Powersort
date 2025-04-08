@@ -1,0 +1,143 @@
+/Users/moritzgross/CLionProjects/TimsortNew/cmake-build-debug/TimsortNew
+File: ../TrackA/220
+Array size n = 5000000, repetitions = 1000
+
+Timsort timings:
+Average time per run: 52422.8 microseconds
+Standard deviation: 976.948 microseconds
+Normalized time (mean / (n * log2(n))): 0.000471142
+
+Powersort timings:
+Average time per run: 40035.4 microseconds
+Standard deviation: 628.34 microseconds
+Normalized time (mean / (n * log2(n))): 0.000359812
+
+
+File: ../TrackA/218
+Array size n = 5000000, repetitions = 1000
+
+Timsort timings:
+Average time per run: 72863.7 microseconds
+Standard deviation: 941.667 microseconds
+Normalized time (mean / (n * log2(n))): 0.000654852
+
+Powersort timings:
+Average time per run: 56974.2 microseconds
+Standard deviation: 1994 microseconds
+Normalized time (mean / (n * log2(n))): 0.000512047
+
+
+File: ../TrackA/206
+Array size n = 3029999, repetitions = 1000
+
+Timsort timings:
+Average time per run: 23729.6 microseconds
+Standard deviation: 2429.61 microseconds
+Normalized time (mean / (n * log2(n))): 0.000363736
+
+Powersort timings:
+Average time per run: 23395.4 microseconds
+Standard deviation: 1185.18 microseconds
+Normalized time (mean / (n * log2(n))): 0.000358613
+
+
+File: ../TrackA/231
+Array size n = 5000000, repetitions = 1000
+
+Timsort timings:
+Average time per run: 41487.6 microseconds
+Standard deviation: 1153.79 microseconds
+Normalized time (mean / (n * log2(n))): 0.000372863
+
+Powersort timings:
+Average time per run: 27357 microseconds
+Standard deviation: 501.933 microseconds
+Normalized time (mean / (n * log2(n))): 0.000245867
+
+
+File: ../TrackA/232
+Array size n = 5000000, repetitions = 1000
+
+Timsort timings:
+Average time per run: 42291.6 microseconds
+Standard deviation: 4744.26 microseconds
+Normalized time (mean / (n * log2(n))): 0.000380089
+
+Powersort timings:
+Average time per run: 27487.5 microseconds
+Standard deviation: 1154.98 microseconds
+Normalized time (mean / (n * log2(n))): 0.00024704
+
+
+File: ../TrackA/228
+Array size n = 2500000, repetitions = 1000
+
+Timsort timings:
+Average time per run: 20532.4 microseconds
+Standard deviation: 117.364 microseconds
+Normalized time (mean / (n * log2(n))): 0.00038643
+
+Powersort timings:
+Average time per run: 13686.1 microseconds
+Standard deviation: 622.67 microseconds
+Normalized time (mean / (n * log2(n))): 0.000257579
+
+
+File: ../TrackA/207
+Array size n = 1350647, repetitions = 1000
+
+Timsort timings:
+Average time per run: 10348.1 microseconds
+Standard deviation: 201.267 microseconds
+Normalized time (mean / (n * log2(n))): 0.000376209
+
+Powersort timings:
+Average time per run: 9068.45 microseconds
+Standard deviation: 78.4131 microseconds
+Normalized time (mean / (n * log2(n))): 0.000329687
+
+
+File: ../TrackA/205
+Array size n = 998711, repetitions = 1000
+
+Timsort timings:
+Average time per run: 7577.3 microseconds
+Standard deviation: 126.791 microseconds
+Normalized time (mean / (n * log2(n))): 0.000380692
+
+Powersort timings:
+Average time per run: 6972.96 microseconds
+Standard deviation: 659.802 microseconds
+Normalized time (mean / (n * log2(n))): 0.000350329
+
+
+File: ../TrackA/173
+Array size n = 1109804, repetitions = 1000
+
+Timsort timings:
+Average time per run: 55874.8 microseconds
+Standard deviation: 2456.81 microseconds
+Normalized time (mean / (n * log2(n))): 0.00250707
+
+Powersort timings:
+Average time per run: 55855.3 microseconds
+Standard deviation: 667.086 microseconds
+Normalized time (mean / (n * log2(n))): 0.00250619
+
+
+File: ../TrackA/174
+Array size n = 1079507, repetitions = 1000
+
+Timsort timings:
+Average time per run: 48575.5 microseconds
+Standard deviation: 1240.37 microseconds
+Normalized time (mean / (n * log2(n))): 0.00224518
+
+Powersort timings:
+Average time per run: 50662.8 microseconds
+Standard deviation: 290.018 microseconds
+Normalized time (mean / (n * log2(n))): 0.00234166
+
+
+
+Process finished with exit code 0
