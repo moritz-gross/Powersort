@@ -738,8 +738,8 @@ int main() {
             return 1;
         }
 
-        int n = base_data.size();
-        constexpr int repetitions = 1000;
+        const int n = base_data.size();
+        constexpr int repetitions = 100;
 
         // Benchmark timsort
         auto timsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
@@ -755,13 +755,13 @@ int main() {
         std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n\n";
 
         std::cout << "Timsort timings:\n";
-        std::cout << "Average time per run: " << timsort_result.mean << " microseconds\n";
-        std::cout << "Standard deviation: " << timsort_result.stdev << " microseconds\n";
+        std::cout << "Average time per run (microseconds): " << timsort_result.mean << "\n";
+        std::cout << "Standard deviation (microseconds): " << timsort_result.stdev << "\n";
         std::cout << "Normalized time (mean / (n * log2(n))): " << timsort_result.normalized << "\n\n";
 
         std::cout << "Powersort timings:\n";
-        std::cout << "Average time per run: " << powersort_result.mean << " microseconds\n";
-        std::cout << "Standard deviation: " << powersort_result.stdev << " microseconds\n";
+        std::cout << "Average time per run (microseconds): " << powersort_result.mean << "\n";
+        std::cout << "Standard deviation (microseconds): " << powersort_result.stdev << "\n";
         std::cout << "Normalized time (mean / (n * log2(n))): " << powersort_result.normalized << "\n\n\n";
     }
 
