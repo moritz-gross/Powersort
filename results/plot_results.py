@@ -17,7 +17,7 @@ def parse_log(content):
         powersort_match = re.search(r"Powersort timings:\s*Average time per run \(microseconds\):\s*([\d\.]+)", block)
 
         if timsort_match and powersort_match:
-            results.append(float(timsort_match.group(1)) / float(powersort_match.group(1)))
+            results.append(float(powersort_match.group(1)) / float(timsort_match.group(1)))
     return results
 
 def main():
