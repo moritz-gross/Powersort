@@ -1,23 +1,51 @@
-import numpy as np
+#!/usr/bin/env python3
+import re
 import matplotlib.pyplot as plt
+import sys
 
-# List of improvement percentages (computed as above)
-improvements = np.array([23.64, 21.81, 1.41, 34.09, 35.03, 33.34, 12.37, 7.98, 0.03, -4.29])
+def parse_log(content):
 
-# Define bin edges in increments of 10%
-bins = np.array([-10, 0, 10, 20, 30, 40, 50])
+    blocks = re.split(r'File:\s+', content)
+    results = []
 
-# Calculate histogram counts using numpy
-counts, _ = np.histogram(improvements, bins=bins)
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
 
-print("Histogram counts:")
-for i in range(len(bins)-1):
-    print(f"Improvement from {bins[i]}% to {bins[i+1]}%: {counts[i]} cases")
+        timsort_match = re.search(r"Timsort timings:\s*Average time per run \(microseconds\):\s*([\d\.]+)", block)
+        powersort_match = re.search(r"Powersort timings:\s*Average time per run \(microseconds\):\s*([\d\.]+)", block)
 
-# Plot the histogram
-plt.hist(improvements, bins=bins, edgecolor='black')
-plt.xlabel('Improvement Percentage (%)')
-plt.ylabel('Number of Cases')
-plt.title('Histogram of Improvement Percentages')
-plt.xticks(bins)
-plt.show()
+        if timsort_match and powersort_match:
+            results.append(float(timsort_match.group(1)) / float(powersort_match.group(1)))
+    return results
+
+def main():
+
+    if len(sys.argv) < 2:
+        print("Usage: python evaluate_logs.py <log_file>")
+        sys.exit(1)
+
+    log_file = sys.argv[1]
+
+    try:
+        with open(log_file, 'r') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"Error reading log file: {e}")
+        sys.exit(1)
+
+
+    results = parse_log(content)
+    if not results:
+        print("No valid log blocks found.")
+        return
+
+    # create histogram
+    plt.figure()
+    plt.hist(results)
+    plt.xlabel("Change from Timsort to Powersort")
+    plt.show()
+
+if __name__ == '__main__':
+    main()
