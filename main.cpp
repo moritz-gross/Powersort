@@ -4,6 +4,9 @@
 
 #include <cassert>
 #include "data_generators/data_generators.h"
+#include <fstream>
+#include <sstream>
+#include <cctype>
 typedef long long npy_intp;
 
 #include <iostream>
@@ -28,7 +31,40 @@ struct IntTag {
 
 
 
+std::vector<long long> list_from_file(const std::string &filename) {
+    std::ifstream file(filename);
+    if (!file) {
+        std::cerr << "Error: Unable to open file " << filename << std::endl;
+        return std::vector<long long>();
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string content = buffer.str();
+    size_t start = content.find('[');
+    size_t end = content.rfind(']');
+    if (start == std::string::npos || end == std::string::npos || end <= start) {
+        std::cerr << "Error: Invalid format in file " << filename << std::endl;
+        return std::vector<long long>();
+    }
+    std::string list_str = content.substr(start + 1, end - start - 1);
 
+    std::vector<long long> result;
+    std::stringstream ss(list_str);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        // Remove all whitespace characters from the token
+        token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
+        if (!token.empty()) {
+            try {
+                long long value = std::stoll(token);
+                result.push_back(value);
+            } catch (const std::exception &e) {
+                std::cerr << "Error parsing integer from token: " << token << std::endl;
+            }
+        }
+    }
+    return result;
+}
 
 /* -*- c -*- */
 
@@ -552,23 +588,23 @@ cleanup:
 #include <algorithm>
 #include <random>
 int main() {
+    // Read the list of ints from the file
+    std::string filename = "../TrackA/2"; // ".." is needed because execution happens from build-folder, I think ?!
+    std::vector<long long> base_data = list_from_file(filename);
+    if (base_data.empty()) {
+        std::cerr << "Error reading input file " << filename << std::endl;
+        return 1;
+    }
 
-    // Default benchmark parameters
-    constexpr int n = 10000000;                // array size: 10**7
-    constexpr int repetitions = 10;             // Number of benchmark repetitions
-    double lambda = 3000.0;                      // Expected run length for "random-runs"
-
+    int n = base_data.size();
+    constexpr int repetitions = 10;
     std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n";
 
-    std::mt19937 rng(std::random_device{}());
-    std::vector<double> durations; // Store each run's duration in microseconds
+    std::vector<double> durations;
     durations.reserve(repetitions);
 
     for (int rep = 0; rep < repetitions; ++rep) {
-
-        std::vector<long long> data(n);
-        generateRandomRuns(data, rng, lambda);
-
+        std::vector<long long> data = base_data;
         auto start_time = std::chrono::steady_clock::now();
         powersort_<IntTag>(data.data(), data.size());
         auto end_time = std::chrono::steady_clock::now();
