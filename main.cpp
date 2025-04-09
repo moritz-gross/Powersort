@@ -747,7 +747,7 @@ int main() {
         std::vector<long long> base_data = list_from_file(path);
 
         if (base_data.empty()) { // If empty or invalid, output a row with valid_instance set to false.
-            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,false\n"; // hardcoded for now :/
+            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,,false\n"; // hardcoded for now :/
             std::cerr << "Invalid or empty file skipped: " << path << std::endl;
             continue; // process next instance
         }
