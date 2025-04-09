@@ -715,8 +715,17 @@ TimingResult run_benchmark(const std::vector<long long>& base_data, int repetiti
 }
 
 
-int main() {
+#include <string>
+#include <cmath>    // for log2
+#include <iomanip>  // for std::setprecision
 
+struct BenchmarkResult {
+    double mean;
+    double stdev;
+    double normalized;
+};
+
+int main() {
     std::vector<std::string> filenames = {
         "220",
         "218",
@@ -730,6 +739,18 @@ int main() {
         "174"
     };
 
+    constexpr int repetitions = 10;
+
+    // Open an output CSV file
+    std::ofstream csvFile("../results.csv");
+    if (!csvFile.is_open()) {
+        std::cerr << "Error opening results.csv for writing." << std::endl;
+        return 1;
+    }
+
+    // Write CSV header
+    csvFile << "File,ArraySize,Repetitions,Timsort_Avg,Timsort_StdDev,Timsort_Normalized,Powersort_Avg,Powersort_StdDev,Powersort_Normalized\n";
+
     for (const std::string& filename : filenames) {
         std::string path = "../TrackA/" + filename;
         std::vector<long long> base_data = list_from_file(path);
@@ -738,8 +759,7 @@ int main() {
             return 1;
         }
 
-        const int n = base_data.size();
-        constexpr int repetitions = 100;
+        const int n = static_cast<int>(base_data.size());
 
         // Benchmark timsort
         auto timsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
@@ -751,19 +771,22 @@ int main() {
             powersort_<IntTag>(data, size);
         });
 
-        std::cout << "File: " << path << "\n";
-        std::cout << "Array size n = " << n << ", repetitions = " << repetitions << "\n\n";
+        // Write the evaluation metrics to the CSV file (one row per test entry)
+        csvFile << path << ","
+                << n << ","
+                << repetitions << ","
+                << std::setprecision(6) << timsort_result.mean << ","
+                << timsort_result.stdev << ","
+                << timsort_result.normalized << ","
+                << powersort_result.mean << ","
+                << powersort_result.stdev << ","
+                << powersort_result.normalized << "\n";
 
-        std::cout << "Timsort timings:\n";
-        std::cout << "Average time per run (microseconds): " << timsort_result.mean << "\n";
-        std::cout << "Standard deviation (microseconds): " << timsort_result.stdev << "\n";
-        std::cout << "Normalized time (mean / (n * log2(n))): " << timsort_result.normalized << "\n\n";
-
-        std::cout << "Powersort timings:\n";
-        std::cout << "Average time per run (microseconds): " << powersort_result.mean << "\n";
-        std::cout << "Standard deviation (microseconds): " << powersort_result.stdev << "\n";
-        std::cout << "Normalized time (mean / (n * log2(n))): " << powersort_result.normalized << "\n\n\n";
+        std::cout << "Processed file: " << path << std::endl;
     }
+
+    csvFile.close();
+    std::cout << "Results saved to results.csv" << std::endl;
 
     return 0;
 }
