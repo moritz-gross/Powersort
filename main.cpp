@@ -59,7 +59,8 @@ std::vector<long long> list_from_file(const std::string &filename) {
                 long long value = std::stoll(token);
                 result.push_back(value);
             } catch (const std::exception &e) {
-                std::cerr << "Error parsing integer from token: " << token << std::endl;
+                std::cerr << "Error parsing token: " << token << " in file " << filename << std::endl;
+                return std::vector<long long>();
             }
         }
     }
@@ -716,8 +717,9 @@ TimingResult run_benchmark(const std::vector<long long>& base_data, int repetiti
 
 
 #include <string>
-#include <cmath>    // for log2
-#include <iomanip>  // for std::setprecision
+#include <cmath>       // for log2
+#include <iomanip>     // for std::setprecision
+#include <filesystem>  // C++17 header for directory iteration
 
 struct BenchmarkResult {
     double mean;
@@ -726,37 +728,28 @@ struct BenchmarkResult {
 };
 
 int main() {
-    std::vector<std::string> filenames = {
-        "220",
-        "218",
-        "206",
-        "231",
-        "232",
-        "228",
-        "207",
-        "205",
-        "173",
-        "174"
-    };
+    constexpr int repetitions = 50;
 
-    constexpr int repetitions = 10;
-
-    // Open an output CSV file
-    std::ofstream csvFile("../results.csv");
+    std::ofstream csvFile("../results/results.csv"); // ".." to step into project root
     if (!csvFile.is_open()) {
         std::cerr << "Error opening results.csv for writing." << std::endl;
         return 1;
     }
 
-    // Write CSV header
-    csvFile << "File,ArraySize,Repetitions,Timsort_Avg,Timsort_StdDev,Timsort_Normalized,Powersort_Avg,Powersort_StdDev,Powersort_Normalized\n";
+    // set header of CSV file
+    csvFile << "File,ArraySize,Repetitions,Timsort_Avg,Timsort_StdDev,Timsort_Normalized,"
+            << "Powersort_Avg,Powersort_StdDev,Powersort_Normalized,valid_instance\n";
 
-    for (const std::string& filename : filenames) {
-        std::string path = "../TrackA/" + filename;
+    std::string folder = "../TrackA";
+
+    for (const auto& entry : std::filesystem::directory_iterator(folder)) { // for each file
+        std::string path = entry.path().string();
         std::vector<long long> base_data = list_from_file(path);
-        if (base_data.empty()) {
-            std::cerr << "Error reading input file " << path << std::endl;
-            return 1;
+
+        if (base_data.empty()) { // If empty or invalid, output a row with valid_instance set to false.
+            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,false\n"; // hardcoded for now :/
+            std::cerr << "Invalid or empty file skipped: " << path << std::endl;
+            continue; // process next instance
         }
 
         const int n = static_cast<int>(base_data.size());
@@ -771,7 +764,6 @@ int main() {
             powersort_<IntTag>(data, size);
         });
 
-        // Write the evaluation metrics to the CSV file (one row per test entry)
         csvFile << path << ","
                 << n << ","
                 << repetitions << ","
@@ -780,8 +772,8 @@ int main() {
                 << timsort_result.normalized << ","
                 << powersort_result.mean << ","
                 << powersort_result.stdev << ","
-                << powersort_result.normalized << "\n";
-
+                << powersort_result.normalized << ","
+                << "true" << "\n";
         std::cout << "Processed file: " << path << std::endl;
     }
 
