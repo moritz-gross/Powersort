@@ -738,8 +738,10 @@ int main() {
     }
 
     // set header of CSV file
-    csvFile << "File,ArraySize,Repetitions,Timsort_Avg,Timsort_StdDev,Timsort_Normalized,"
-            << "Powersort_Avg,Powersort_StdDev,Powersort_Normalized,valid_instance\n";
+    csvFile << "File,ArraySize,Repetitions,"
+            << "Timsort_Avg,Timsort_StdDev,Timsort_Normalized,"
+            << "Powersort_Avg,Powersort_StdDev,Powersort_Normalized,"
+            << "Stdsort_Avg,Stdsort_StdDev,Stdsort_Normalized,valid_instance\n";
 
     std::string folder = "../TrackA";
 
@@ -765,15 +767,25 @@ int main() {
             powersort_<IntTag>(data, size);
         });
 
+        // Benchmark adaptsort
+        auto stdsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
+            std::sort(data, data + size);
+        });
+
         csvFile << path << ","
                 << n << ","
                 << repetitions << ","
                 << std::setprecision(6) << timsort_result.mean << ","
                 << timsort_result.stdev << ","
                 << timsort_result.normalized << ","
+
                 << powersort_result.mean << ","
                 << powersort_result.stdev << ","
                 << powersort_result.normalized << ","
+
+                << stdsort_result.mean << ","
+                << stdsort_result.stdev << ","
+                << stdsort_result.normalized << ","
                 << "true" << "\n";
         std::cout << "Processed file: " << path << std::endl;
     }
