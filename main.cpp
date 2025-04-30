@@ -728,8 +728,9 @@ struct BenchmarkResult {
 };
 
 int main() {
-    constexpr int repetitions = 1000;
-    std::string output_file = "../results/2025-04-09--run1.csv";
+    constexpr int repetitions = 1;
+
+    std::string output_file = "../results/2025-05-01--test1.csv";
     std::ofstream csvFile(output_file); // ".." to step into project root
     if (!csvFile.is_open()) {
         std::cerr << "Error opening " << output_file << " for writing." << std::endl;
