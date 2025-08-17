@@ -7,12 +7,18 @@
 #include <fstream>
 #include <sstream>
 #include <cctype>
-typedef long long npy_intp;
-
-#include <iostream>
 #include <vector>
 #include <cstring>
 #include <random>
+#include <iostream>
+#include <numeric> // Required for std::accumulate
+#include <cmath>   // Required for std::log2, std::sqrt
+#include <chrono>  // Required for timing
+#include <algorithm> // Required for std::sort, std::lower_bound
+#include <iomanip> // Required for std::setprecision
+#include <filesystem> // Required for directory iteration
+
+typedef long long npy_intp;
 
 #define NPY_UNLIKELY(x) (x)
 #define NPY_ENOMEM 1
@@ -618,7 +624,7 @@ powersort_(void *start, npy_intp num)
     for (l = 0; l < num;) {
         n = count_run_<Tag>((type *)start, l, num, minrun);
         // Use PowerSort merge ordering on the previously identified run.
-        int ret = found_new_run_<Tag>((type *)start, stack, &stack_ptr, n, num, &buffer);
+        ret = found_new_run_<Tag>((type *)start, stack, &stack_ptr, n, num, &buffer);
         if (NPY_UNLIKELY(ret < 0))
             goto cleanup;
         // Push the new run onto the stack.
@@ -684,6 +690,30 @@ timsort_(void *start, npy_intp num)
     return ret;
 }
 
+// START: Added Binary Insertion Sort
+template <typename T>
+void binary_insertion_sort(T* arr, size_t n) {
+    for (size_t i = 1; i < n; ++i) {
+        T key = arr[i];
+        // Find location where key should be inserted using binary search
+        // std::lower_bound returns an iterator to the first element not less than key
+        T* insertion_point = std::lower_bound(arr, arr + i, key);
+        size_t index = insertion_point - arr;
+
+        // Shift elements greater than key one position right
+        // Use memmove for potentially overlapping memory regions
+        if (arr + i != insertion_point) {
+             memmove(insertion_point + 1, insertion_point, (i - index) * sizeof(T));
+        }
+
+
+        // Insert key at the correct location
+        arr[index] = key;
+    }
+}
+// END: Added Binary Insertion Sort
+
+
 struct TimingResult {
     double mean;
     double stdev;
@@ -741,7 +771,9 @@ int main() {
     csvFile << "File,ArraySize,Repetitions,"
             << "Timsort_Avg,Timsort_StdDev,Timsort_Normalized,"
             << "Powersort_Avg,Powersort_StdDev,Powersort_Normalized,"
-            << "Stdsort_Avg,Stdsort_StdDev,Stdsort_Normalized,valid_instance\n";
+            << "Stdsort_Avg,Stdsort_StdDev,Stdsort_Normalized,"
+            << "BinaryInsertionSort_Avg,BinaryInsertionSort_StdDev,BinaryInsertionSort_Normalized,"
+            << "valid_instance\n";
 
     std::string folder = "../TrackA";
 
@@ -750,7 +782,7 @@ int main() {
         std::vector<long long> base_data = list_from_file(path);
 
         if (base_data.empty()) { // If empty or invalid, output a row with valid_instance set to false.
-            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,,false\n"; // hardcoded for now :/
+            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,,,,,,,false\n";
             std::cerr << "Invalid or empty file skipped: " << path << std::endl;
             continue; // process next instance
         }
@@ -772,6 +804,12 @@ int main() {
             std::sort(data, data + size);
         });
 
+        // Benchmark binary insertion sort - ADDED
+        auto binary_insertion_sort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
+            binary_insertion_sort<long long>(data, size);
+        });
+
+
         csvFile << path << ","
                 << n << ","
                 << repetitions << ","
@@ -786,6 +824,12 @@ int main() {
                 << stdsort_result.mean << ","
                 << stdsort_result.stdev << ","
                 << stdsort_result.normalized << ","
+
+                // Added Binary Insertion Sort results to CSV
+                << binary_insertion_sort_result.mean << ","
+                << binary_insertion_sort_result.stdev << ","
+                << binary_insertion_sort_result.normalized << ","
+
                 << "true" << "\n";
         std::cout << "Processed file: " << path << std::endl;
     }
