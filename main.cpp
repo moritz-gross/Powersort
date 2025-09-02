@@ -744,16 +744,20 @@ TimingResult run_benchmark(const std::vector<long long>& base_data, int repetiti
 }
 
 namespace testing_utils {
-    inline void print_vec(const std::vector<long long>& v) {
+    inline std::string vec_to_string(const std::vector<long long>& v) {
         constexpr size_t max_elems = 20;
-        std::cout << "[";
+        std::ostringstream oss;
+
+        oss << "[";
         const size_t n = v.size();
         for (size_t i = 0; i < n && i < max_elems; ++i) {
-            if (i > 0) std::cout << ", ";
-            std::cout << v[i];
+            if (i > 0) oss << ", ";
+            oss << v[i];
         }
-        if (n > max_elems) std::cout << ", ...";
-        std::cout << "]";
+        if (n > max_elems) oss << ", ...";
+        oss << "]";
+
+        return oss.str();
     }
 }
 
@@ -761,23 +765,15 @@ int main() {
     const std::string folder_path = "TrackA";
 
     for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
-        if (!entry.is_regular_file()) continue;
         std::string filename = entry.path().string();
+        std::cout << "File: " << filename << "\n";
 
         std::vector<long long> data = list_from_file(filename);
-        std::cout << "File: " << entry.path().filename().string() << "\n";
 
-        std::cout << " in : ";
-        testing_utils::print_vec(data);
-        std::cout << "\n";
-
+        std::cout << "in : " << testing_utils::vec_to_string(data) << "\n";
         powersort_<IntTag>(data.data(), static_cast<npy_intp>(data.size()));
+        std::cout << "out: " << testing_utils::vec_to_string(data) << "\n";
 
-        std::cout << " out: ";
-        testing_utils::print_vec(data);
-        std::cout << "\n";
-
-        std::cout << "---------------------------------\n";
     }
 
     return 0;
