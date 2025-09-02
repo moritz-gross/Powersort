@@ -4,6 +4,4 @@ project(TimsortNew)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(TimsortNew main.cpp
-        data_generators/data_generators.cpp
-        data_generators/data_generators.h
 )

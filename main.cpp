@@ -3,7 +3,6 @@
 // ------------------------------
 
 #include <cassert>
-#include "data_generators/data_generators.h"
 #include <fstream>
 #include <sstream>
 #include <cctype>
@@ -11,12 +10,11 @@
 #include <cstring>
 #include <random>
 #include <iostream>
-#include <numeric> // Required for std::accumulate
-#include <cmath>   // Required for std::log2, std::sqrt
-#include <chrono>  // Required for timing
-#include <algorithm> // Required for std::sort, std::lower_bound
-#include <iomanip> // Required for std::setprecision
-#include <filesystem> // Required for directory iteration
+#include <numeric> // std::accumulate
+#include <cmath>   // std::log2, std::sqrt
+#include <chrono>  // timing
+#include <algorithm> // std::sort, std::lower_bound
+#include <filesystem> // directory iteration
 
 typedef long long npy_intp;
 
@@ -745,97 +743,40 @@ TimingResult run_benchmark(const std::vector<long long>& base_data, int repetiti
     return TimingResult{mean, stdev, normalized};
 }
 
-
-#include <string>
-#include <cmath>       // for log2
-#include <iomanip>     // for std::setprecision
-#include <filesystem>  // C++17 header for directory iteration
-
-struct BenchmarkResult {
-    double mean;
-    double stdev;
-    double normalized;
-};
+inline void print_vec(const std::vector<long long>& v) {
+    constexpr size_t max_elems = 20;
+    std::cout << "[";
+    const size_t n = v.size();
+    for (size_t i = 0; i < n && i < max_elems; ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << v[i];
+    }
+    if (n > max_elems) std::cout << ", ...";
+    std::cout << "]";
+}
 
 int main() {
-    constexpr int repetitions = 1;
+    std::string folder_path = "TrackA";  // Ordner muss auf gleicher Ebene wie das Executable liegen
 
-    std::string output_file = "../results/2025-05-01--test1.csv";
-    std::ofstream csvFile(output_file); // ".." to step into project root
-    if (!csvFile.is_open()) {
-        std::cerr << "Error opening " << output_file << " for writing." << std::endl;
-        return 1;
+    for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
+        if (!entry.is_regular_file()) continue;
+        std::string filename = entry.path().string();
+
+        std::vector<long long> data = list_from_file(filename);
+        std::cout << "File: " << entry.path().filename().string() << "\n";
+
+        std::cout << " in : ";
+        print_vec(data);
+        std::cout << "\n";
+
+        powersort_<IntTag>(data.data(), static_cast<npy_intp>(data.size()));
+
+        std::cout << " out: ";
+        print_vec(data);
+        std::cout << "\n";
+
+        std::cout << "---------------------------------\n";
     }
-
-    // set header of CSV file
-    csvFile << "File,ArraySize,Repetitions,"
-            << "Timsort_Avg,Timsort_StdDev,Timsort_Normalized,"
-            << "Powersort_Avg,Powersort_StdDev,Powersort_Normalized,"
-            << "Stdsort_Avg,Stdsort_StdDev,Stdsort_Normalized,"
-            << "BinaryInsertionSort_Avg,BinaryInsertionSort_StdDev,BinaryInsertionSort_Normalized,"
-            << "valid_instance\n";
-
-    std::string folder = "../TrackA";
-
-    for (const auto& entry : std::filesystem::directory_iterator(folder)) { // for each file
-        std::string path = entry.path().string();
-        std::vector<long long> base_data = list_from_file(path);
-
-        if (base_data.empty()) { // If empty or invalid, output a row with valid_instance set to false.
-            csvFile << path << "," << 0 << "," << repetitions << ",,,,,,,,,,,,false\n";
-            std::cerr << "Invalid or empty file skipped: " << path << std::endl;
-            continue; // process next instance
-        }
-
-        const int n = static_cast<int>(base_data.size());
-
-        // Benchmark timsort
-        auto timsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
-            timsort_<IntTag>(data, size);
-        });
-
-        // Benchmark powersort
-        auto powersort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
-            powersort_<IntTag>(data, size);
-        });
-
-        // Benchmark adaptsort
-        auto stdsort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
-            std::sort(data, data + size);
-        });
-
-        // Benchmark binary insertion sort - ADDED
-        auto binary_insertion_sort_result = run_benchmark(base_data, repetitions, [](long long* data, size_t size) {
-            binary_insertion_sort<long long>(data, size);
-        });
-
-
-        csvFile << path << ","
-                << n << ","
-                << repetitions << ","
-                << std::setprecision(6) << timsort_result.mean << ","
-                << timsort_result.stdev << ","
-                << timsort_result.normalized << ","
-
-                << powersort_result.mean << ","
-                << powersort_result.stdev << ","
-                << powersort_result.normalized << ","
-
-                << stdsort_result.mean << ","
-                << stdsort_result.stdev << ","
-                << stdsort_result.normalized << ","
-
-                // Added Binary Insertion Sort results to CSV
-                << binary_insertion_sort_result.mean << ","
-                << binary_insertion_sort_result.stdev << ","
-                << binary_insertion_sort_result.normalized << ","
-
-                << "true" << "\n";
-        std::cout << "Processed file: " << path << std::endl;
-    }
-
-    csvFile.close();
-    std::cout << "Results saved to " << output_file << std::endl;
 
     return 0;
 }
