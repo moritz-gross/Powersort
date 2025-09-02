@@ -34,43 +34,6 @@ struct IntTag {
 
 
 
-
-std::vector<long long> list_from_file(const std::string &filename) {
-    std::ifstream file(filename);
-    if (!file) {
-        std::cerr << "Error: Unable to open file " << filename << std::endl;
-        return std::vector<long long>();
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string content = buffer.str();
-    size_t start = content.find('[');
-    size_t end = content.rfind(']');
-    if (start == std::string::npos || end == std::string::npos || end <= start) {
-        std::cerr << "Error: Invalid format in file " << filename << std::endl;
-        return std::vector<long long>();
-    }
-    std::string list_str = content.substr(start + 1, end - start - 1);
-
-    std::vector<long long> result;
-    std::stringstream ss(list_str);
-    std::string token;
-    while (std::getline(ss, token, ',')) {
-        // Remove all whitespace characters from the token
-        token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
-        if (!token.empty()) {
-            try {
-                long long value = std::stoll(token);
-                result.push_back(value);
-            } catch (const std::exception &e) {
-                std::cerr << "Error parsing token: " << token << " in file " << filename << std::endl;
-                return std::vector<long long>();
-            }
-        }
-    }
-    return result;
-}
-
 /* -*- c -*- */
 
 /*
@@ -109,8 +72,9 @@ std::vector<long long> list_from_file(const std::string &filename) {
 #include <cstdlib>
 #include <utility>
 
-/* enough for 32 * 1.618 ** 128 elements */
-#define TIMSORT_STACK_SIZE 128
+/* enough for 32 * 1.618 ** 128 elements.
+   If powersort was used in all cases, 90 would suffice, as  32 * 2 ** 90  >=  32 * 1.618 ** 128  */
+#define RUN_STACK_SIZE 128
 
 static npy_intp
 compute_min_run(npy_intp num)
@@ -128,7 +92,7 @@ compute_min_run(npy_intp num)
 typedef struct {
     npy_intp s; /* start pointer */
     npy_intp l; /* length */
-    int power;  /* run power for PowerSort merge ordering */
+    int power;  /* node "level" for powersort merge strategy */
 } run;
 
 /* buffer for argsort. Declared here to avoid multiple declarations. */
@@ -454,26 +418,25 @@ merge_at_(type *arr, const run *stack, const npy_intp at, buffer_<Tag> *buffer)
     return 0;
 }
 
+/* See https://github.com/python/cpython/blob/ea23c897cd25702e72a04e06664f6864f07a7c5d/Objects/listsort.txt
+*  for a detailed explanation.
+*  In CPython, *num* is called *n*, but we changed it for consistency with the NumPy implementation.
+*/
 static int
-powerloop(npy_intp s1, npy_intp n1, npy_intp n2, npy_intp n)
+powerloop(npy_intp s1, npy_intp n1, npy_intp n2, npy_intp num)
 {
     int result = 0;
-    assert(s1 >= 0);
-    assert(n1 > 0 && n2 > 0);
-    assert(s1 + n1 + n2 <= n);
     npy_intp a = 2 * s1 + n1;  /* 2*a */
     npy_intp b = a + n1 + n2;  /* 2*b */
     for (;;) {
         ++result;
-        if (a >= n) {  /* both quotient bits are 1 */
-            assert(b >= a);
-            a -= n;
-            b -= n;
+        if (a >= num) {  /* both quotient bits are 1 */
+            a -= num;
+            b -= num;
         }
-        else if (b >= n) {  /* a/n bit is 0, b/n bit is 1 */
+        else if (b >= num) {  /* a/num bit is 0, b/num bit is 1 */
             break;
         }
-        assert(a < b && b < n);
         a <<= 1;
         b <<= 1;
     }
@@ -483,26 +446,108 @@ powerloop(npy_intp s1, npy_intp n1, npy_intp n2, npy_intp n)
 template <typename Tag, typename type>
 static int
 found_new_run_(type *arr, run *stack, npy_intp *stack_ptr, npy_intp n2,
-               npy_intp total, buffer_<Tag> *buffer)
+               npy_intp num, buffer_<Tag> *buffer)
 {
+    int ret;
     if (*stack_ptr > 0) {
         npy_intp s1 = stack[*stack_ptr - 1].s;
         npy_intp n1 = stack[*stack_ptr - 1].l;
-        int power = powerloop(s1, n1, n2, total);
+        int power = powerloop(s1, n1, n2, num);
         while (*stack_ptr > 1 && stack[*stack_ptr - 2].power > power) {
-            int ret = merge_at_<Tag>(arr, stack, *stack_ptr - 2, buffer);
+            ret = merge_at_<Tag>(arr, stack, *stack_ptr - 2, buffer);
             if (NPY_UNLIKELY(ret < 0)) {
                 return ret;
             }
             stack[*stack_ptr - 2].l += stack[*stack_ptr - 1].l;
             --(*stack_ptr);
         }
-        /* Set the power for the last run on the stack */
-        if (*stack_ptr > 0) {
-            stack[*stack_ptr - 1].power = power;
-        }
+        stack[*stack_ptr - 1].power = power;
     }
     return 0;
+}
+
+template <typename Tag, typename type>
+static int
+force_collapse_(type *arr, run *stack, npy_intp *stack_ptr,
+                buffer_<Tag> *buffer)
+{
+    int ret;
+    npy_intp top = *stack_ptr;
+
+    while (2 < top) {
+        if (stack[top - 3].l <= stack[top - 1].l) {
+            ret = merge_at_<Tag>(arr, stack, top - 3, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 3].l += stack[top - 2].l;
+            stack[top - 2] = stack[top - 1];
+            --top;
+        }
+        else {
+            ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 2].l += stack[top - 1].l;
+            --top;
+        }
+    }
+
+    if (1 < top) {
+        ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+template <typename Tag>
+static int
+powersort_(void *start, npy_intp num)
+{
+    using type = typename Tag::type;
+    int ret;
+    npy_intp l, n, stack_ptr, minrun;
+    buffer_<Tag> buffer;
+    run stack[RUN_STACK_SIZE];
+    buffer.pw = NULL;
+    buffer.size = 0;
+    stack_ptr = 0;
+    minrun = compute_min_run(num);
+
+    for (l = 0; l < num;) {
+        n = count_run_<Tag>((type *)start, l, num, minrun);
+        ret = found_new_run_<Tag>((type *)start, stack, &stack_ptr, n, num, &buffer);
+        if (NPY_UNLIKELY(ret < 0))
+            goto cleanup;
+
+        // Push the new run onto the stack.
+        stack[stack_ptr].s = l;
+        stack[stack_ptr].l = n;
+        ++stack_ptr;
+        l += n;
+    }
+
+    ret = force_collapse_<Tag>((type *)start, stack, &stack_ptr, &buffer);
+
+    if (NPY_UNLIKELY(ret < 0)) {
+        goto cleanup;
+    }
+
+    ret = 0;
+cleanup:
+
+    free(buffer.pw);
+
+    return ret;
 }
 
 template <typename Tag, typename type>
@@ -562,89 +607,6 @@ try_collapse_(type *arr, run *stack, npy_intp *stack_ptr, buffer_<Tag> *buffer)
     return 0;
 }
 
-template <typename Tag, typename type>
-static int
-force_collapse_(type *arr, run *stack, npy_intp *stack_ptr,
-                buffer_<Tag> *buffer)
-{
-    int ret;
-    npy_intp top = *stack_ptr;
-
-    while (2 < top) {
-        if (stack[top - 3].l <= stack[top - 1].l) {
-            ret = merge_at_<Tag>(arr, stack, top - 3, buffer);
-
-            if (NPY_UNLIKELY(ret < 0)) {
-                return ret;
-            }
-
-            stack[top - 3].l += stack[top - 2].l;
-            stack[top - 2] = stack[top - 1];
-            --top;
-        }
-        else {
-            ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
-
-            if (NPY_UNLIKELY(ret < 0)) {
-                return ret;
-            }
-
-            stack[top - 2].l += stack[top - 1].l;
-            --top;
-        }
-    }
-
-    if (1 < top) {
-        ret = merge_at_<Tag>(arr, stack, top - 2, buffer);
-
-        if (NPY_UNLIKELY(ret < 0)) {
-            return ret;
-        }
-    }
-
-    return 0;
-}
-
-template <typename Tag>
-static int
-powersort_(void *start, npy_intp num)
-{
-    using type = typename Tag::type;
-    int ret;
-    npy_intp l, n, stack_ptr, minrun;
-    buffer_<Tag> buffer;
-    run stack[TIMSORT_STACK_SIZE];
-    buffer.pw = NULL;
-    buffer.size = 0;
-    stack_ptr = 0;
-    minrun = compute_min_run(num);
-
-    for (l = 0; l < num;) {
-        n = count_run_<Tag>((type *)start, l, num, minrun);
-        // Use PowerSort merge ordering on the previously identified run.
-        ret = found_new_run_<Tag>((type *)start, stack, &stack_ptr, n, num, &buffer);
-        if (NPY_UNLIKELY(ret < 0))
-            goto cleanup;
-        // Push the new run onto the stack.
-        stack[stack_ptr].s = l;
-        stack[stack_ptr].l = n;
-        ++stack_ptr;
-        l += n;
-    }
-
-    ret = force_collapse_<Tag>((type *)start, stack, &stack_ptr, &buffer);
-
-    if (NPY_UNLIKELY(ret < 0)) {
-        goto cleanup;
-    }
-
-    ret = 0;
-cleanup:
-
-    free(buffer.pw);
-
-    return ret;
-}
 
 template <typename Tag>
 static int
@@ -654,7 +616,7 @@ timsort_(void *start, npy_intp num)
     int ret;
     npy_intp l, n, stack_ptr, minrun;
     buffer_<Tag> buffer;
-    run stack[TIMSORT_STACK_SIZE];
+    run stack[RUN_STACK_SIZE];
     buffer.pw = NULL;
     buffer.size = 0;
     stack_ptr = 0;
@@ -689,35 +651,413 @@ timsort_(void *start, npy_intp num)
 }
 
 
-struct TimingResult {
-    double mean;
-    double stdev;
-    double normalized;
-};
+/* argsort */
 
-template <typename SortFunc>
-TimingResult run_benchmark(const std::vector<long long>& base_data, int repetitions, SortFunc sort_func) {
-    std::vector<double> durations;
-    durations.reserve(repetitions);
-    int n = base_data.size();
-    for (int rep = 0; rep < repetitions; ++rep) {
-        // Make a copy of the input data for this run
-        auto data = base_data;
-        auto start_time = std::chrono::steady_clock::now();
-        sort_func(data.data(), data.size());
-        auto end_time = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double, std::micro>(end_time - start_time).count();
-        durations.push_back(elapsed);
+template <typename Tag, typename type>
+static npy_intp
+acount_run_(type *arr, npy_intp *tosort, npy_intp l, npy_intp num,
+            npy_intp minrun)
+{
+    npy_intp sz;
+    type vc;
+    npy_intp vi;
+    npy_intp *pl, *pi, *pj, *pr;
+
+    if (NPY_UNLIKELY(num - l == 1)) {
+        return 1;
     }
-    double sum = std::accumulate(durations.begin(), durations.end(), 0.0);
-    double mean = sum / durations.size();
-    double accum = 0.0;
-    for (double d : durations) {
-        accum += (d - mean) * (d - mean);
+
+    pl = tosort + l;
+
+    /* (not strictly) ascending sequence */
+    if (!Tag::less(arr[*(pl + 1)], arr[*pl])) {
+        for (pi = pl + 1;
+             pi < tosort + num - 1 && !Tag::less(arr[*(pi + 1)], arr[*pi]);
+             ++pi) {
+        }
     }
-    double stdev = std::sqrt(accum / durations.size());
-    double normalized = mean / (n * std::log2(n));
-    return TimingResult{mean, stdev, normalized};
+    else { /* (strictly) descending sequence */
+        for (pi = pl + 1;
+             pi < tosort + num - 1 && Tag::less(arr[*(pi + 1)], arr[*pi]);
+             ++pi) {
+        }
+
+        for (pj = pl, pr = pi; pj < pr; ++pj, --pr) {
+            std::swap(*pj, *pr);
+        }
+    }
+
+    ++pi;
+    sz = pi - pl;
+
+    if (sz < minrun) {
+        if (l + minrun < num) {
+            sz = minrun;
+        }
+        else {
+            sz = num - l;
+        }
+
+        pr = pl + sz;
+
+        /* insertion sort */
+        for (; pi < pr; ++pi) {
+            vi = *pi;
+            vc = arr[*pi];
+            pj = pi;
+
+            while (pl < pj && Tag::less(vc, arr[*(pj - 1)])) {
+                *pj = *(pj - 1);
+                --pj;
+            }
+
+            *pj = vi;
+        }
+    }
+
+    return sz;
+}
+
+template <typename Tag, typename type>
+static npy_intp
+agallop_right_(const type *arr, const npy_intp *tosort, const npy_intp size,
+               const type key)
+{
+    npy_intp last_ofs, ofs, m;
+
+    if (Tag::less(key, arr[tosort[0]])) {
+        return 0;
+    }
+
+    last_ofs = 0;
+    ofs = 1;
+
+    for (;;) {
+        if (size <= ofs || ofs < 0) {
+            ofs = size; /* arr[ofs] is never accessed */
+            break;
+        }
+
+        if (Tag::less(key, arr[tosort[ofs]])) {
+            break;
+        }
+        else {
+            last_ofs = ofs;
+            /* ofs = 1, 3, 7, 15... */
+            ofs = (ofs << 1) + 1;
+        }
+    }
+
+    /* now that arr[tosort[last_ofs]] <= key < arr[tosort[ofs]] */
+    while (last_ofs + 1 < ofs) {
+        m = last_ofs + ((ofs - last_ofs) >> 1);
+
+        if (Tag::less(key, arr[tosort[m]])) {
+            ofs = m;
+        }
+        else {
+            last_ofs = m;
+        }
+    }
+
+    /* now that arr[tosort[ofs-1]] <= key < arr[tosort[ofs]] */
+    return ofs;
+}
+
+template <typename Tag, typename type>
+static npy_intp
+agallop_left_(const type *arr, const npy_intp *tosort, const npy_intp size,
+              const type key)
+{
+    npy_intp last_ofs, ofs, l, m, r;
+
+    if (Tag::less(arr[tosort[size - 1]], key)) {
+        return size;
+    }
+
+    last_ofs = 0;
+    ofs = 1;
+
+    for (;;) {
+        if (size <= ofs || ofs < 0) {
+            ofs = size;
+            break;
+        }
+
+        if (Tag::less(arr[tosort[size - ofs - 1]], key)) {
+            break;
+        }
+        else {
+            last_ofs = ofs;
+            ofs = (ofs << 1) + 1;
+        }
+    }
+
+    /* now that arr[tosort[size-ofs-1]] < key <= arr[tosort[size-last_ofs-1]]
+     */
+    l = size - ofs - 1;
+    r = size - last_ofs - 1;
+
+    while (l + 1 < r) {
+        m = l + ((r - l) >> 1);
+
+        if (Tag::less(arr[tosort[m]], key)) {
+            l = m;
+        }
+        else {
+            r = m;
+        }
+    }
+
+    /* now that arr[tosort[r-1]] < key <= arr[tosort[r]] */
+    return r;
+}
+
+template <typename Tag, typename type>
+static void
+amerge_left_(type *arr, npy_intp *p1, npy_intp l1, npy_intp *p2, npy_intp l2,
+             npy_intp *p3)
+{
+    npy_intp *end = p2 + l2;
+    memcpy(p3, p1, sizeof(npy_intp) * l1);
+    /* first element must be in p2 otherwise skipped in the caller */
+    *p1++ = *p2++;
+
+    while (p1 < p2 && p2 < end) {
+        if (Tag::less(arr[*p2], arr[*p3])) {
+            *p1++ = *p2++;
+        }
+        else {
+            *p1++ = *p3++;
+        }
+    }
+
+    if (p1 != p2) {
+        memcpy(p1, p3, sizeof(npy_intp) * (p2 - p1));
+    }
+}
+
+template <typename Tag, typename type>
+static void
+amerge_right_(type *arr, npy_intp *p1, npy_intp l1, npy_intp *p2, npy_intp l2,
+              npy_intp *p3)
+{
+    npy_intp ofs;
+    npy_intp *start = p1 - 1;
+    memcpy(p3, p2, sizeof(npy_intp) * l2);
+    p1 += l1 - 1;
+    p2 += l2 - 1;
+    p3 += l2 - 1;
+    /* first element must be in p1 otherwise skipped in the caller */
+    *p2-- = *p1--;
+
+    while (p1 < p2 && start < p1) {
+        if (Tag::less(arr[*p3], arr[*p1])) {
+            *p2-- = *p1--;
+        }
+        else {
+            *p2-- = *p3--;
+        }
+    }
+
+    if (p1 != p2) {
+        ofs = p2 - start;
+        memcpy(start + 1, p3 - ofs + 1, sizeof(npy_intp) * ofs);
+    }
+}
+
+template <typename Tag, typename type>
+static int
+amerge_at_(type *arr, npy_intp *tosort, const run *stack, const npy_intp at,
+           buffer_intp *buffer)
+{
+    int ret;
+    npy_intp s1, l1, s2, l2, k;
+    npy_intp *p1, *p2;
+    s1 = stack[at].s;
+    l1 = stack[at].l;
+    s2 = stack[at + 1].s;
+    l2 = stack[at + 1].l;
+    /* tosort[s2] belongs to tosort[s1+k] */
+    k = agallop_right_<Tag>(arr, tosort + s1, l1, arr[tosort[s2]]);
+
+    if (l1 == k) {
+        /* already sorted */
+        return 0;
+    }
+
+    p1 = tosort + s1 + k;
+    l1 -= k;
+    p2 = tosort + s2;
+    /* tosort[s2-1] belongs to tosort[s2+l2] */
+    l2 = agallop_left_<Tag>(arr, tosort + s2, l2, arr[tosort[s2 - 1]]);
+
+    if (l2 < l1) {
+        ret = resize_buffer_intp(buffer, l2);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            return ret;
+        }
+
+        amerge_right_<Tag>(arr, p1, l1, p2, l2, buffer->pw);
+    }
+    else {
+        ret = resize_buffer_intp(buffer, l1);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            return ret;
+        }
+
+        amerge_left_<Tag>(arr, p1, l1, p2, l2, buffer->pw);
+    }
+
+    return 0;
+}
+
+template <typename Tag, typename type>
+static int
+atry_collapse_(type *arr, npy_intp *tosort, run *stack, npy_intp *stack_ptr,
+               buffer_intp *buffer)
+{
+    int ret;
+    npy_intp A, B, C, top;
+    top = *stack_ptr;
+
+    while (1 < top) {
+        B = stack[top - 2].l;
+        C = stack[top - 1].l;
+
+        if ((2 < top && stack[top - 3].l <= B + C) ||
+            (3 < top && stack[top - 4].l <= stack[top - 3].l + B)) {
+            A = stack[top - 3].l;
+
+            if (A <= C) {
+                ret = amerge_at_<Tag>(arr, tosort, stack, top - 3, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 3].l += B;
+                stack[top - 2] = stack[top - 1];
+                --top;
+            }
+            else {
+                ret = amerge_at_<Tag>(arr, tosort, stack, top - 2, buffer);
+
+                if (NPY_UNLIKELY(ret < 0)) {
+                    return ret;
+                }
+
+                stack[top - 2].l += C;
+                --top;
+            }
+        }
+        else if (1 < top && B <= C) {
+            ret = amerge_at_<Tag>(arr, tosort, stack, top - 2, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 2].l += C;
+            --top;
+        }
+        else {
+            break;
+        }
+    }
+
+    *stack_ptr = top;
+    return 0;
+}
+
+template <typename Tag, typename type>
+static int
+aforce_collapse_(type *arr, npy_intp *tosort, run *stack, npy_intp *stack_ptr,
+                 buffer_intp *buffer)
+{
+    int ret;
+    npy_intp top = *stack_ptr;
+
+    while (2 < top) {
+        if (stack[top - 3].l <= stack[top - 1].l) {
+            ret = amerge_at_<Tag>(arr, tosort, stack, top - 3, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 3].l += stack[top - 2].l;
+            stack[top - 2] = stack[top - 1];
+            --top;
+        }
+        else {
+            ret = amerge_at_<Tag>(arr, tosort, stack, top - 2, buffer);
+
+            if (NPY_UNLIKELY(ret < 0)) {
+                return ret;
+            }
+
+            stack[top - 2].l += stack[top - 1].l;
+            --top;
+        }
+    }
+
+    if (1 < top) {
+        ret = amerge_at_<Tag>(arr, tosort, stack, top - 2, buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+template <typename Tag>
+static int
+atimsort_(void *v, npy_intp *tosort, npy_intp num)
+{
+    using type = typename Tag::type;
+    int ret;
+    npy_intp l, n, stack_ptr, minrun;
+    buffer_intp buffer;
+    run stack[RUN_STACK_SIZE];
+    buffer.pw = NULL;
+    buffer.size = 0;
+    stack_ptr = 0;
+    minrun = compute_min_run(num);
+
+    for (l = 0; l < num;) {
+        n = acount_run_<Tag>((type *)v, tosort, l, num, minrun);
+        stack[stack_ptr].s = l;
+        stack[stack_ptr].l = n;
+        ++stack_ptr;
+        ret = atry_collapse_<Tag>((type *)v, tosort, stack, &stack_ptr,
+                                  &buffer);
+
+        if (NPY_UNLIKELY(ret < 0)) {
+            goto cleanup;
+        }
+
+        l += n;
+    }
+
+    ret = aforce_collapse_<Tag>((type *)v, tosort, stack, &stack_ptr, &buffer);
+
+    if (NPY_UNLIKELY(ret < 0)) {
+        goto cleanup;
+    }
+
+    ret = 0;
+cleanup:
+
+    if (buffer.pw != NULL) {
+        free(buffer.pw);
+    }
+
+    return ret;
 }
 
 namespace testing_utils {
@@ -736,20 +1076,82 @@ namespace testing_utils {
 
         return oss.str();
     }
+
+    std::vector<long long> list_from_file(const std::string &filename) {
+        std::ifstream file(filename);
+        if (!file) {
+            std::cerr << "Error: Unable to open file " << filename << std::endl;
+            return std::vector<long long>();
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string content = buffer.str();
+        size_t start = content.find('[');
+        size_t end = content.rfind(']');
+        if (start == std::string::npos || end == std::string::npos || end <= start) {
+            std::cerr << "Error: Invalid format in file " << filename << std::endl;
+            return std::vector<long long>();
+        }
+        std::string list_str = content.substr(start + 1, end - start - 1);
+
+        std::vector<long long> result;
+        std::stringstream ss(list_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            // Remove all whitespace characters from the token
+            token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
+            if (!token.empty()) {
+                try {
+                    long long value = std::stoll(token);
+                    result.push_back(value);
+                } catch (const std::exception &e) {
+                    std::cerr << "Error parsing token: " << token << " in file " << filename << std::endl;
+                    return std::vector<long long>();
+                }
+            }
+        }
+        return result;
+    }
 }
 
+
 int main() {
+    std::ofstream csv("results.csv");
+    csv << "file,num_elements,power_mean_us,tim_mean_us,ratio\n";
+
     const std::string folder_path = "TrackA";
+    constexpr int repetitions = 25;
 
     for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
         std::string filename = entry.path().string();
         std::cout << "File: " << filename << "\n";
 
-        std::vector<long long> data = list_from_file(filename);
+        std::vector<long long> base_data = testing_utils::list_from_file(filename);
+        const std::size_t num_elements = base_data.size();
 
-        std::cout << "in : " << testing_utils::vec_to_string(data) << "\n";
-        powersort_<IntTag>(data.data(), static_cast<npy_intp>(data.size()));
-        std::cout << "out: " << testing_utils::vec_to_string(data) << "\n";
+        auto benchmark = [&](auto sort_func) {
+            std::vector<double> durations;
+            durations.reserve(repetitions);
+            for (int rep = 0; rep < repetitions; ++rep) {
+                auto data = base_data; // copy each run
+                auto t_start = std::chrono::steady_clock::now();
+                sort_func(data.data(), static_cast<npy_intp>(data.size()));
+                auto t_end = std::chrono::steady_clock::now();
+                durations.push_back(std::chrono::duration<double, std::micro>(t_end - t_start).count());
+            }
+            return std::accumulate(durations.begin(), durations.end(), 0.0) /durations.size();
+        };
+
+        double power_mean = benchmark([](void* ptr, npy_intp n) {powersort_<IntTag>(ptr, n);});
+        double tim_mean = benchmark([](void* ptr, npy_intp n) {timsort_<IntTag>(ptr, n);});
+        double ratio = power_mean / tim_mean;
+
+        std::cout << " PowerSort mean [us]: " << power_mean << "\n"
+                  << " TimSort   mean [us]: " << tim_mean << "\n"
+                  << " Ratio (Power/Tim)  : " << ratio << "\n\n";
+
+        csv << filename << "," << num_elements << ","
+            << power_mean << "," << tim_mean << "," << ratio << "\n";
 
     }
 
