@@ -743,20 +743,22 @@ TimingResult run_benchmark(const std::vector<long long>& base_data, int repetiti
     return TimingResult{mean, stdev, normalized};
 }
 
-inline void print_vec(const std::vector<long long>& v) {
-    constexpr size_t max_elems = 20;
-    std::cout << "[";
-    const size_t n = v.size();
-    for (size_t i = 0; i < n && i < max_elems; ++i) {
-        if (i > 0) std::cout << ", ";
-        std::cout << v[i];
+namespace testing_utils {
+    inline void print_vec(const std::vector<long long>& v) {
+        constexpr size_t max_elems = 20;
+        std::cout << "[";
+        const size_t n = v.size();
+        for (size_t i = 0; i < n && i < max_elems; ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << v[i];
+        }
+        if (n > max_elems) std::cout << ", ...";
+        std::cout << "]";
     }
-    if (n > max_elems) std::cout << ", ...";
-    std::cout << "]";
 }
 
 int main() {
-    std::string folder_path = "TrackA";  // Ordner muss auf gleicher Ebene wie das Executable liegen
+    const std::string folder_path = "TrackA";
 
     for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
         if (!entry.is_regular_file()) continue;
@@ -766,13 +768,13 @@ int main() {
         std::cout << "File: " << entry.path().filename().string() << "\n";
 
         std::cout << " in : ";
-        print_vec(data);
+        testing_utils::print_vec(data);
         std::cout << "\n";
 
         powersort_<IntTag>(data.data(), static_cast<npy_intp>(data.size()));
 
         std::cout << " out: ";
-        print_vec(data);
+        testing_utils::print_vec(data);
         std::cout << "\n";
 
         std::cout << "---------------------------------\n";
