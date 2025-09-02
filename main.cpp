@@ -688,29 +688,6 @@ timsort_(void *start, npy_intp num)
     return ret;
 }
 
-// START: Added Binary Insertion Sort
-template <typename T>
-void binary_insertion_sort(T* arr, size_t n) {
-    for (size_t i = 1; i < n; ++i) {
-        T key = arr[i];
-        // Find location where key should be inserted using binary search
-        // std::lower_bound returns an iterator to the first element not less than key
-        T* insertion_point = std::lower_bound(arr, arr + i, key);
-        size_t index = insertion_point - arr;
-
-        // Shift elements greater than key one position right
-        // Use memmove for potentially overlapping memory regions
-        if (arr + i != insertion_point) {
-             memmove(insertion_point + 1, insertion_point, (i - index) * sizeof(T));
-        }
-
-
-        // Insert key at the correct location
-        arr[index] = key;
-    }
-}
-// END: Added Binary Insertion Sort
-
 
 struct TimingResult {
     double mean;
