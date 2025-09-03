@@ -1015,6 +1015,59 @@ aforce_collapse_(type *arr, npy_intp *tosort, run *stack, npy_intp *stack_ptr,
     return 0;
 }
 
+template <typename Tag, typename type>
+static int
+apower_found_new_run_(type *arr, npy_intp *tosort, run *stack, npy_intp *stack_ptr,
+                      npy_intp n2, npy_intp num, buffer_intp *buffer)
+{
+    // identical shape to found_new_run_ but works on amerge_*/agallop_* via amerge_at_
+    int ret;
+    if (*stack_ptr > 0) {
+        npy_intp s1 = stack[*stack_ptr - 1].s;
+        npy_intp n1 = stack[*stack_ptr - 1].l;
+        int power = powerloop(s1, n1, n2, num);
+        while (*stack_ptr > 1 && stack[*stack_ptr - 2].power > power) {
+            ret = amerge_at_<Tag>(arr, tosort, stack, *stack_ptr - 2, buffer);
+            if (NPY_UNLIKELY(ret < 0)) return ret;
+            stack[*stack_ptr - 2].l += stack[*stack_ptr - 1].l;
+            --(*stack_ptr);
+        }
+        stack[*stack_ptr - 1].power = power;
+    }
+    return 0;
+}
+
+template <typename Tag>
+static int
+apowersort_(void *v, npy_intp *tosort, npy_intp num)
+{
+    using type = typename Tag::type;
+    int ret;
+    npy_intp l = 0, n, stack_ptr = 0, minrun = compute_min_run(num);
+    buffer_intp buffer{nullptr, 0};
+    run stack[RUN_STACK_SIZE];
+
+    for (; l < num; ) {
+        n = acount_run_<Tag>((type*)v, tosort, l, num, minrun);
+        ret = apower_found_new_run_<Tag>((type*)v, tosort, stack, &stack_ptr, n, num, &buffer);
+        if (NPY_UNLIKELY(ret < 0)) goto cleanup;
+
+        stack[stack_ptr].s = l;
+        stack[stack_ptr].l = n;
+        ++stack_ptr;
+        l += n;
+    }
+
+    ret = aforce_collapse_<Tag>((type*)v, tosort, stack, &stack_ptr, &buffer);
+    if (NPY_UNLIKELY(ret < 0)) goto cleanup;
+
+    ret = 0;
+    cleanup:
+        if (buffer.pw) free(buffer.pw);
+    return ret;
+}
+
+
 template <typename Tag>
 static int
 atimsort_(void *v, npy_intp *tosort, npy_intp num)
@@ -1117,7 +1170,10 @@ namespace testing_utils {
 
 int main() {
     std::ofstream csv("results.csv");
-    csv << "file,num_elements,power_mean_us,tim_mean_us,ratio\n";
+    csv << "file,num_elements,"
+           "power_mean_us,tim_mean_us,"
+           "atim_mean_us,apower_mean_us,"
+           "ratio_power_tim,ratio_apower_atim\n";
 
     const std::string folder_path = "TrackA";
     constexpr int repetitions = 25;
@@ -1135,24 +1191,50 @@ int main() {
             for (int rep = 0; rep < repetitions; ++rep) {
                 auto data = base_data; // copy each run
                 auto t_start = std::chrono::steady_clock::now();
-                sort_func(data.data(), static_cast<npy_intp>(data.size()));
+                sort_func(static_cast<void*>(data.data()), static_cast<npy_intp>(data.size()));
                 auto t_end = std::chrono::steady_clock::now();
                 durations.push_back(std::chrono::duration<double, std::micro>(t_end - t_start).count());
             }
             return std::accumulate(durations.begin(), durations.end(), 0.0) /durations.size();
         };
 
+        // Reuse single benchmark() by wrapping argsort calls.
+        // Preallocate index buffer once per file to reduce alloc overhead.
+        std::vector<npy_intp> idx(base_data.size());
+
+        auto benchmark_argsort_tim = [&] {
+            return benchmark([&](void* ptr, npy_intp n){
+                std::iota(idx.begin(), idx.begin() + n, static_cast<npy_intp>(0));
+                (void)atimsort_<IntTag>(ptr, idx.data(), n);
+            });
+        };
+
+        auto benchmark_argsort_power = [&](){
+            return benchmark([&](void* ptr, npy_intp n){
+                std::iota(idx.begin(), idx.begin() + n, static_cast<npy_intp>(0));
+                (void)apowersort_<IntTag>(ptr, idx.data(), n);
+            });
+        };
+
         double power_mean = benchmark([](void* ptr, npy_intp n) {powersort_<IntTag>(ptr, n);});
         double tim_mean = benchmark([](void* ptr, npy_intp n) {timsort_<IntTag>(ptr, n);});
-        double ratio = power_mean / tim_mean;
+        double atim_mean  = benchmark_argsort_tim();
+        double apower_mean= benchmark_argsort_power();
 
-        std::cout << " PowerSort mean [us]: " << power_mean << "\n"
-                  << " TimSort   mean [us]: " << tim_mean << "\n"
-                  << " Ratio (Power/Tim)  : " << ratio << "\n\n";
+        double ratio_power_tim   = power_mean / tim_mean;
+        double ratio_apower_atim = apower_mean / atim_mean;
+
+        std::cout << " PowerSort (in-place) mean [us]: " << power_mean  << "\n"
+                  << " TimSort  (in-place) mean [us]: " << tim_mean    << "\n"
+                  << " ArgSort TimSort      mean [us]: " << atim_mean   << "\n"
+                  << " ArgSort PowerSort    mean [us]: " << apower_mean << "\n"
+                  << " Ratio Power/Tim (in-place)    : " << ratio_power_tim   << "\n"
+                  << " Ratio Arg(Power)/Arg(Tim)     : " << ratio_apower_atim << "\n\n";
 
         csv << filename << "," << num_elements << ","
-            << power_mean << "," << tim_mean << "," << ratio << "\n";
-
+            << power_mean << "," << tim_mean << ","
+            << atim_mean  << "," << apower_mean << ","
+            << ratio_power_tim << "," << ratio_apower_atim << "\n";
     }
 
     return 0;
