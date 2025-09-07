@@ -1169,14 +1169,13 @@ namespace testing_utils {
 
 
 int main() {
-    std::ofstream csv("results.csv");
+    std::ofstream csv("results_250.csv");
     csv << "file,num_elements,"
            "power_mean_us,tim_mean_us,"
-           "atim_mean_us,apower_mean_us,"
-           "ratio_power_tim,ratio_apower_atim\n";
+           "atim_mean_us,apower_mean_us\n";
 
     const std::string folder_path = "TrackA";
-    constexpr int repetitions = 25;
+    constexpr int repetitions = 250;
 
     for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
         std::string filename = entry.path().string();
@@ -1221,20 +1220,14 @@ int main() {
         double atim_mean  = benchmark_argsort_tim();
         double apower_mean= benchmark_argsort_power();
 
-        double ratio_power_tim   = power_mean / tim_mean;
-        double ratio_apower_atim = apower_mean / atim_mean;
-
         std::cout << " PowerSort (in-place) mean [us]: " << power_mean  << "\n"
                   << " TimSort  (in-place) mean [us]: " << tim_mean    << "\n"
                   << " ArgSort TimSort      mean [us]: " << atim_mean   << "\n"
-                  << " ArgSort PowerSort    mean [us]: " << apower_mean << "\n"
-                  << " Ratio Power/Tim (in-place)    : " << ratio_power_tim   << "\n"
-                  << " Ratio Arg(Power)/Arg(Tim)     : " << ratio_apower_atim << "\n\n";
+                  << " ArgSort PowerSort    mean [us]: " << apower_mean << "\n";
 
         csv << filename << "," << num_elements << ","
             << power_mean << "," << tim_mean << ","
-            << atim_mean  << "," << apower_mean << ","
-            << ratio_power_tim << "," << ratio_apower_atim << "\n";
+            << atim_mean  << "," << apower_mean << "\n";
     }
 
     return 0;
