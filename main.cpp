@@ -2,19 +2,10 @@
 // <START> SETUP FOR POWERSORT
 // ------------------------------
 
-#include <cassert>
 #include <fstream>
 #include <sstream>
-#include <cctype>
-#include <vector>
-#include <cstring>
-#include <random>
 #include <iostream>
-#include <numeric> // std::accumulate
-#include <cmath>   // std::log2, std::sqrt
-#include <chrono>  // timing
-#include <algorithm> // std::sort, std::lower_bound
-#include <filesystem> // directory iteration
+#include <numeric>
 
 typedef long long npy_intp;
 
@@ -1170,9 +1161,7 @@ namespace testing_utils {
 
 int main() {
     std::ofstream csv("results_250.csv");
-    csv << "file,num_elements,"
-           "power_mean_us,tim_mean_us,"
-           "atim_mean_us,apower_mean_us\n";
+    csv << "file,num_elements,power_mean_us,tim_mean_us,atim_mean_us,apower_mean_us\n";
 
     const std::string folder_path = "TrackA";
     constexpr int repetitions = 10;
@@ -1221,7 +1210,7 @@ int main() {
         double apower_mean= benchmark_argsort_power();
 
         std::cout << " PowerSort (in-place) mean [us]: " << power_mean  << "\n"
-                  << " TimSort  (in-place) mean [us]: " << tim_mean    << "\n"
+                  << " TimSort  (in-place) mean [us]:  " << tim_mean    << "\n"
                   << " ArgSort TimSort      mean [us]: " << atim_mean   << "\n"
                   << " ArgSort PowerSort    mean [us]: " << apower_mean << "\n";
 
