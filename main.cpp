@@ -1175,7 +1175,7 @@ int main() {
            "atim_mean_us,apower_mean_us\n";
 
     const std::string folder_path = "TrackA";
-    constexpr int repetitions = 250;
+    constexpr int repetitions = 10;
 
     for (const auto& entry : std::filesystem::directory_iterator(folder_path)) {
         std::string filename = entry.path().string();
